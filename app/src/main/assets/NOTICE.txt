@@ -1,0 +1,12 @@
+YAMNet — Copyright 2019 The TensorFlow Authors. Licensed under Apache License 2.0.
+LiteRT — Copyright The TensorFlow Authors / Google AI Edge. Apache License 2.0.
+YAMNET-LICENSE.txt contains the Apache License, Version 2.0.
+
+Versioned model source:
+https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite
+Model architecture/source and class mapping:
+https://github.com/tensorflow/models/tree/master/research/audioset/yamnet
+YAMNet predicts 521 AudioSet classes. Index 38 is Snoring (/m/01d3sd).
+Training on AudioSet does not establish accuracy on bedside sleep recordings.
+
+Snore Local is an independent application and is not affiliated with Google.
