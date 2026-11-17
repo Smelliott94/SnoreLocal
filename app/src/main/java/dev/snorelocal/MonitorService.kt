@@ -90,6 +90,8 @@ class MonitorService : Service() {
         var sink: AacEpisodeSink? = null
         var engine: EpisodeEngine? = null
         var continuous: ContinuousRecorder? = null
+        var measurements: SessionMeasurements? = null
+        var lastCheckpoint = 0L
         var capture: Thread? = null
         var callback: AudioManager.AudioRecordingCallback? = null
         val queue = ArrayBlockingQueue<Block>(20)
@@ -97,7 +99,8 @@ class MonitorService : Service() {
         val captureDone = AtomicBoolean(false)
         try {
             val settings = repository.settings()
-            session = repository.begin(settings.recordEverything)
+            val recordingZone = java.time.ZoneId.systemDefault().id
+            session = repository.begin(settings.recordEverything, recordingZone)
             if (!settings.recordEverything) {
                 classifier = try { Yamnet(this) } catch (t: Throwable) { throw IllegalStateException("Snoring classifier failed: ${t.message}", t) }
             }
@@ -124,9 +127,21 @@ class MonitorService : Service() {
             val anchorElapsed = SystemClock.elapsedRealtime()
             audio.startRecording()
             check(audio.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Microphone could not start recording" }
-            sink = AacEpisodeSink(repository, session) { anchorMs.get() }
+            measurements = SessionMeasurements(session, recordingZone) { anchorMs.get() }
+            val meter = measurements
+            val observer = object : EpisodeEngine.Observer {
+                override fun onEpisodeStarted(startSample: Long) = meter.onEpisodeStarted(startSample)
+                override fun onDetection(startSample: Long, endSample: Long) = meter.onDetection(startSample, endSample)
+                override fun onEpisodeFinished(endSample: Long, reason: String) {
+                    meter.onEpisodeFinished(endSample, reason)
+                    repository.saveMeasurements(session, meter.checkpoint())
+                }
+            }
+            sink = AacEpisodeSink(repository, session, { meter.currentEpisodeId }, {
+                repository.saveMeasurements(session, meter.checkpoint())
+            }) { anchorMs.get() }
             if (settings.recordEverything) continuous = ContinuousRecorder(Yamnet.RATE * 300L, sink)
-            else engine = EpisodeEngine(Yamnet.RATE * 5, Yamnet.RATE * settings.gapSeconds.toLong(), Yamnet.RATE * 300L, settings.sensitivity, sink)
+            else engine = EpisodeEngine(Yamnet.RATE * 5, Yamnet.RATE * settings.gapSeconds.toLong(), Yamnet.RATE * 300L, settings.sensitivity, sink, observer, Yamnet.WINDOW)
             val gate = SoundGate(settings.sensitivity)
             val windowRing = PcmRing(Yamnet.WINDOW)
             val window = ShortArray(Yamnet.WINDOW)
@@ -165,8 +180,13 @@ class MonitorService : Service() {
                 val block = queue.poll(200, java.util.concurrent.TimeUnit.MILLISECONDS) ?: continue
                 try {
                     if (continuous != null) {
+                        meter.accept(block.pcm, 0, block.count, continuous.position())
                         continuous.accept(block.pcm, block.count)
                         val end = continuous.position()
+                        if (end - lastCheckpoint >= Yamnet.RATE * 30L) {
+                            repository.saveMeasurements(session, meter.checkpoint())
+                            lastCheckpoint = end
+                        }
                         if (end - lastStorageCheck >= Yamnet.RATE) {
                             repository.checkStorage(sink.pendingBytes)
                             check(!getSystemService(AudioManager::class.java).isMicrophoneMute) { "Microphone was muted" }
@@ -191,7 +211,12 @@ class MonitorService : Service() {
                             } else 0f
                             nextWindow += Yamnet.HOP
                         }
+                        meter.accept(chunk, 0, n, detector.position())
                         detector.accept(chunk, n, score)
+                        if (end - lastCheckpoint >= Yamnet.RATE * 30L) {
+                            repository.saveMeasurements(session, meter.checkpoint())
+                            lastCheckpoint = end
+                        }
                         offset += n
                         if (end - lastStorageCheck >= Yamnet.RATE) { repository.checkStorage(sink.pendingBytes); check(!getSystemService(AudioManager::class.java).isMicrophoneMute) { "Microphone was muted" }; lastStorageCheck = end }
                     }
@@ -215,6 +240,10 @@ class MonitorService : Service() {
             runCatching { recorder?.release() }; recorder = null
             runCatching { classifier?.close() }
             sink?.abort()
+            if (session != null && measurements != null) {
+                runCatching { repository.saveMeasurements(session, measurements.checkpoint(final = true)) }
+                    .onFailure { failure.compareAndSet(null, "Could not save measurements: ${it.message}") }
+            }
             if (session != null) runCatching { repository.finish(session, failure.get()) }.onFailure { failure.compareAndSet(null, "Could not save session state: ${it.message}") }
             handler.post {
                 handler.removeCallbacks(watchdog)

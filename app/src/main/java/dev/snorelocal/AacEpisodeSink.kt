@@ -10,19 +10,21 @@ import java.nio.ByteOrder
 import java.util.UUID
 
 /** Streaming AAC-LC in MPEG-4; only the detected episode reaches disk. */
-class AacEpisodeSink(private val repository: Repository, private val session: String, private val anchorMs: () -> Long) : EpisodeEngine.Sink {
+class AacEpisodeSink(private val repository: Repository, private val session: String, private val logicalEpisodeId: () -> String? = { null }, private val onCommitted: () -> Unit = {}, private val anchorMs: () -> Long) : EpisodeEngine.Sink {
     private var codec: MediaCodec? = null
     private var muxer: MediaMuxer? = null
     private var track = -1
     private var started = false
     private var id = ""
     private var startSample = 0L
+    private var currentLogicalEpisode: String? = null
     private var samples = 0L
     private var temporary: File? = null
     val pendingBytes: Long get() = temporary?.length() ?: 0L
     private val info = MediaCodec.BufferInfo()
     override fun open(startSample: Long) {
         repository.checkStorage()
+        currentLogicalEpisode = logicalEpisodeId()
         this.startSample = startSample; samples = 0; track = -1; started = false
         id = UUID.randomUUID().toString()
         temporary = File(repository.directory, "$id.part")
@@ -107,13 +109,14 @@ class AacEpisodeSink(private val repository: Repository, private val session: St
             val output = repository.file(id)
             check(checkNotNull(temporary).renameTo(output)) { "Cannot commit recording" }
             try {
-                repository.add(Episode(id, session, anchorMs() + startSample * 1000 / Yamnet.RATE, samples, output.length()))
+                repository.add(Episode(id, session, anchorMs() + startSample * 1000 / Yamnet.RATE, samples, output.length(), currentLogicalEpisode))
             } catch (t: Throwable) {
                 // A file without committed metadata must not remain invisible until next launch.
                 output.delete()
                 throw t
             }
             temporary = null
+            onCommitted()
         } catch (t: Throwable) { abort(); throw t }
     }
     private fun release() {

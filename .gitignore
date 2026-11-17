@@ -1,8 +1,44 @@
-/.gradle/
+# Gradle/Kotlin caches and generated build output
+.gradle/
+.kotlin/
+build/
+.externalNativeBuild/
+.cxx/
+
+# Downloaded local SDK and build tools; machine-specific SDK paths
 /.tools/
-/local.properties
-**/build/
+local.properties
+
+# Local IDE state
 *.iml
 .idea/
+
+# Exported Android packages and diagnostic output
+*.apk
+*.aab
+*.ap_
+*.hprof
+*.log
+
+# Private signing keys and signing configuration
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# Local environment values; keep example configuration shareable
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python helper caches
 __pycache__/
 *.pyc
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+
+# Keep source, model assets/checksums, gradle.properties and the entire
+# gradle/wrapper/ directory (including gradle-wrapper.jar) in version control.

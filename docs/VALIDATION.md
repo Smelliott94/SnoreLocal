@@ -1,6 +1,47 @@
 # Validation record
 
-## Completed here
+## Collapsible recordings and statistics (2026-11-17)
+
+- All application, JVM-test and Android-instrumentation Kotlin sources compile with
+  Kotlin/Compose 2.2.21, Android SDK 36 and JVM target 17, using cached dependencies.
+- All 26 JVM tests pass under a 64 MB heap. Coverage includes the previous regression
+  suite plus overlapping detection windows, split-file logical IDs, bounded measurement
+  checkpoints, PCM energy/levels, silence versus missing data, partial read partitions,
+  noon/DST/calendar boundaries, weighted aggregation, mic-test exclusion and legacy,
+  cleared or interrupted statistics.
+- Actual SQLite SQL was exercised with fresh schema version 3 and upgrades from
+  versions 1 and 2. Existing clip/session rows survive; migrated measurements are
+  unavailable. Interrupted open events close at their last checkpoint and become partial.
+- New isolated Android tests cover the actual migration, audio deletion/expiry with
+  retained measurements, clearing statistics without deleting audio, and crash recovery.
+  These tests compile but require an Android device/emulator to execute.
+- Gradle test/lint/APK tasks were attempted with writable caches and cached dependencies.
+  Startup failed before tasks ran: FileLockContentionHandler could not determine a
+  usable wildcard IP because the sandbox denies socket access. No new APK or lint
+  result is claimed for this change.
+
+Device acceptance still needed: expand/collapse nights and episodes, rotate with
+expansion/playback state, listen/seek/share/delete clips, compare a split episode to
+its single instance count, check night/week/month navigation, confirm quiet teal versus
+missing grey graph sections, and test both audio retention and explicit statistics
+clearing. Use annotated sounds to assess detected duration; recordings include context
+that is deliberately absent from the estimated-snoring counter. Compare colour scales
+using consistent microphone placement. No loudness calibration or accuracy claims.
+
+## Kotlin conversion checks (2026-11-16)
+
+- Converted all four Java application helpers and all four Java unit-test files to Kotlin.
+- Compiled all application Kotlin sources directly with the pinned Kotlin 2.2.21 and
+  Compose compiler 2.2.21, cached Android SDK 36 and cached project dependencies: passed.
+- Compiled and ran all seven Kotlin JUnit tests with Kotlin 2.2.21, JVM 17 target,
+  and a 64 MB runtime heap: passed, including actual bundled model labels.
+- Updated the standalone core-check script to use Kotlin; it also passed using the
+  cached Kotlin 2.3.10 CLI.
+- Full Gradle test/lint/APK tasks could not run in this sandbox: Gradle's file-lock
+  service requires socket access, which the sandbox denies. Direct compiler checks
+  do not replace Android packaging, lint or physical-device validation.
+
+## Initial implementation checks
 
 - Workspace/tool inspection: no Android repository, SDK, Gradle, Kotlin compiler,
   adb or emulator; Java 21.0.6 available. A new standalone project was created.

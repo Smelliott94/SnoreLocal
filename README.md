@@ -2,15 +2,18 @@
 
 Native Android sleep audio monitor in Kotlin and Jetpack Compose. It saves individual
 YAMNet-classified snoring episodes locally as `.m4a` files. No account, server,
-analytics, network permission, or runtime model download. The two small PCM and
-segmentation helpers use plain Java so their contracts can also be tested with a JDK.
+analytics, network permission, or runtime model download. All application code and
+tests use Kotlin. The PCM and segmentation helpers have no Android dependencies,
+so their contracts can also be tested with a standalone Kotlin compiler.
 
 **Delivery status:** the model and build dependencies are installed, and an earlier
-APK build passed unit tests and lint (0 errors, 11 warnings). The latest model-loader
-fix and microphone-test mode require a fresh Android build. JVM regression checks
-pass; emulator/device recording and native classifier behaviour still need validation.
-See [validation](docs/VALIDATION.md). The build fails without the model; there is no
-volume-detector fallback.
+APK build passed unit tests and lint (0 errors, 11 warnings). The current statistics
+and collapsible-recording sources require a fresh APK build. All application and test
+Kotlin sources compile with the pinned Kotlin/Compose compiler, and 26 JVM tests pass.
+Android instrumentation tests are compiled but have not run on a device. Current lint,
+APK packaging and UI/device checks remain pending because this sandbox blocks Gradle's
+socket access. See [validation](docs/VALIDATION.md). The build fails without the model;
+there is no volume-detector fallback.
 
 ## Build and install
 
@@ -72,6 +75,39 @@ threshold (0.50 → 0.20) and the gate level. These are uncalibrated defaults, n
 measured accuracy. Recordings are grouped by local night, defined as noon to noon;
 multiple manual sessions remain individually labelled completed or interrupted.
 
+## Nights and statistics
+
+The Recordings tab groups each night into a collapsible card. Expand a night to see
+logical snoring episodes, then expand an episode to access its audio clips. A sustained
+episode split into multiple five-minute files still counts as one instance. Existing
+clips remain available after upgrading; their missing detection measurements are
+shown as unavailable rather than guessed from recording length.
+
+The Statistics tab provides Night, Week and Month summaries: instance count, estimated
+snoring time, measured monitoring time, percentage of monitored audio containing detected
+snoring, instances per monitored hour, longest episode, and per-night averages. Nights
+run noon-to-noon in the recording time zone; weeks start Monday. Missing nights are not
+zero-snoring nights. Live and interrupted sessions are marked partial. Microphone-test
+sessions do not contribute to snoring statistics.
+
+Sound graphs use teal → amber → red on one fixed relative input scale. They display
+recorded sound, including ambient sound and clip context, without decibel numbers or
+claims of calibrated acoustic loudness. Phone distance, microphone gain and placement
+change the recorded level. Episode graphs use one-second peaks from 100 ms RMS blocks;
+night summaries use five-minute bins and week/month views use per-night bars.
+
+Estimated snoring time is the union of classifier-positive windows using the existing
+smoothed thresholds. Overlapping windows count once; pre-roll and quiet tails are not
+counted merely because they appear in an audio clip. This estimates detected sound,
+not sleep duration or a medical measurement.
+
+Audio retention/deletion preserves lightweight measurements. Deleted audio is labelled
+as unavailable while its episode statistics remain. Clear statistics history requires
+confirmation, keeps audio files, and is disabled while monitoring. Measurements are
+checkpointed every 30 seconds and on clip/episode/session completion. Unexpected exits
+recover the last saved checkpoint and mark the session partial. Statistics cannot be
+reconstructed for unsaved audio or older clips; no retrospective inference is performed.
+
 ## Architecture and defaults
 
 - `MonitorService`: microphone foreground service; duplicate starts are ignored.
@@ -103,8 +139,14 @@ multiple manual sessions remain individually labelled completed or interrupted.
   is the fallback origin; absolute timing then has device input-latency uncertainty.
   Sample-relative duration remains exact. Clock changes during a session do not
   rewrite earlier timestamps. Capture timing drift >2 seconds stops the session.
+- `SessionMeasurements` / `Statistics`: pure Kotlin streaming sample/energy counts,
+  unioned detection intervals, compact minute records with sixty graph levels, and
+  calendar aggregation. Capture buffers and the single inference worker are reused;
+  measurement persistence runs off the capture thread. The in-memory measurement
+  cache keeps only recent mutable minutes and pending logical episodes.
 - `Repository`: SQLite metadata/session state and app-private `files/episodes`.
-  Files are finalized from `.part` to `.m4a` before adding metadata. On process
+  Schema version 3 migrates older sessions/clips and adds logical episode and
+  minute-measurement tables. Files are finalized from `.part` to `.m4a` before adding metadata. On process
   restart, uncommitted parts/orphans are removed and running sessions become
   interrupted. Earlier committed clips survive. An uncommitted active clip can be
   lost after process death; the session explains that loss. Automatic OS process
@@ -132,10 +174,12 @@ multiple manual sessions remain individually labelled completed or interrupted.
 ## Tests and measurement
 
 ```sh
-./tools/test-core.sh                    # JDK only; no Android tools/dependencies
+./tools/test-core.sh                    # Kotlin compiler + JDK; no Android SDK required
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ./gradlew :app:connectedDebugAndroidTest # Android device/emulator with microphone
 ```
+
+For the standalone check, put `kotlinc` on PATH or set `KOTLINC=/path/to/kotlinc`.
 
 Core checks cover wraparound, pre-roll, sample timestamps, tails, merging, exact
 splits/no sample gaps, Stop and bounded eight-hour history under a 64 MB heap.
